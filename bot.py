@@ -46,9 +46,18 @@ async def handle_project_name(update: Update, context: ContextTypes.DEFAULT_TYPE
     return TOKEN_TICKER
 
 async def handle_token_ticker(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    context.user_data['token_ticker'] = update.message.text
+    ticker = update.message.text
+    
+    if not is_valid_ticker(ticker):
+        await update.message.reply_text("Please enter a valid token ticker (must start with '$' and be up to 5 characters long). 💔")
+        return TOKEN_TICKER  # Stay in the same state to ask for the ticker again
+    
+    context.user_data['token_ticker'] = ticker
     await update.message.reply_text("What is your elevator pitch? 🚀")
     return ELEVATOR_PITCH
+
+def is_valid_ticker(ticker: str) -> bool:
+    return ticker.startswith('$') and len(ticker) <= 6 and len(ticker) >= 2 and ticker[1:].isupper()  # Check if it starts with '$', is up to 5 characters long, and is uppercase
 
 async def handle_elevator_pitch(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     context.user_data['elevator_pitch'] = update.message.text
