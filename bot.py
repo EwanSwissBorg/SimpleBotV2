@@ -9,7 +9,7 @@ from telegram.ext import (
 )
 import os
 from dotenv import load_dotenv
-
+import matplotlib.pyplot as plt
 load_dotenv()
 
 # Définition des états de la conversation
@@ -342,6 +342,40 @@ async def handle_additional_info(update: Update, context: ContextTypes.DEFAULT_T
     await summary(update, context)  # Appel de la fonction summary ici
     return ConversationHandler.END
 
+
+def create_pie_chart(token_distribution: str) -> str:
+    # Parse the token distribution
+    categories = []
+    percentages = []
+    print('token_distribution', token_distribution)
+    
+    lines = token_distribution.splitlines()
+    for line in lines:
+        line = line.strip()
+        if not line:
+            continue
+        parts = line.split('-')
+        if len(parts) == 2:
+            percentage_part = parts[0].strip()
+            category_part = parts[1].strip()
+            if percentage_part.endswith('%'):
+                percentage = int(percentage_part[:-1])  # Remove '%' and convert to int
+                categories.append(category_part)
+                percentages.append(percentage)
+
+    # Create a pie chart
+    plt.figure(figsize=(8, 8))
+    plt.pie(percentages, labels=categories, autopct='%1.1f%%', startangle=140)
+    plt.title('Token Distribution')
+    plt.axis('equal')  # Equal aspect ratio ensures that pie is drawn as a circle.
+
+    # Save the pie chart as an image
+    chart_path = 'token_distribution_chart.png'
+    # plt.savefig(chart_path)
+    # plt.close()  # Close the plot to free memory
+
+    return chart_path
+
 async def summary(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     recap = (
         "🎉 Here's a summary of your project submission:\n\n"
@@ -369,6 +403,12 @@ async def summary(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     )
     
     await update.message.reply_text(recap)
+
+    # Create and send the pie chart
+    chart_path = create_pie_chart(context.user_data['token_distribution'])
+    with open(chart_path, 'rb') as chart_file:
+        await update.message.reply_photo(photo=chart_file)
+
 
 def main():
     app = ApplicationBuilder().token(os.getenv("TELEGRAM_BOT_TOKEN")).build()
