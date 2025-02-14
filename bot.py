@@ -24,13 +24,16 @@ load_dotenv()
     GROWTH_STRATEGY, 
     COMPETITORS, 
     DIFFERENTIATORS, 
-    TOKEN_METRICS, 
-    VESTING_SCHEDULE, 
+    TOKEN_METRICS,
+    INITIAL_SUPPLY,
+    TARGET_FDV,
+    TOKEN_DISTRIBUTION,
+    VESTING_SCHEDULE,
     ROADMAP, 
     TEAM_INFO, 
     ESSENTIAL_LINKS, 
     ADDITIONAL_INFO
-) = range(16)
+) = range(19)
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     await update.message.reply_text(
@@ -103,17 +106,201 @@ async def handle_differentiators(update: Update, context: ContextTypes.DEFAULT_T
     return TOKEN_METRICS
 
 async def handle_token_metrics(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    context.user_data['token_metrics'] = update.message.text
+    token_metrics = update.message.text
+    
+    if not is_valid_token_metrics(token_metrics):
+        await update.message.reply_text("Please enter a valid token metrics format (e.g., '1,000,000,000'). 💔")
+        return TOKEN_METRICS  # Stay in the same state to ask for the token metrics again
+    
+    context.user_data['token_metrics'] = token_metrics
+    await update.message.reply_text("Initial Supply at TGE (Token Generation Event) 🔓")
+    return INITIAL_SUPPLY
+
+def is_valid_token_metrics(metrics: str) -> bool:
+    # Check if the format is a valid number with commas
+
+    parts = metrics.split(',')
+    # Check if the last part is a valid number
+    if not parts[0].isdigit():
+        return False
+
+    # Check if all parts except the last one are valid numbers
+    for part in parts[1:]:
+        if not part.isdigit() or len(part) != 3:  # Each part must be a digit and exactly 3 digits long
+            return False
+
+    return True  # Valid format
+
+async def handle_initial_supply(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    initial_supply = update.message.text
+    
+    if not is_valid_token_metrics(initial_supply):
+        await update.message.reply_text("Please enter a valid initial supply format (e.g., '1,000,000'). 💔")
+        return INITIAL_SUPPLY  # Stay in the same state to ask for the initial supply again
+    
+    context.user_data['initial_supply'] = initial_supply
+    await update.message.reply_text("Target FDV (Fully Diluted Valuation) 💰")
+    return TARGET_FDV
+
+async def handle_target_fdv(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    target_fdv = update.message.text
+    
+    if not is_valid_token_metrics(target_fdv):
+        await update.message.reply_text("Please enter a valid FDV format (e.g., '1,000,000,000'). 💔")
+        return TARGET_FDV  # Stay in the same state to ask for the target FDV again
+    
+    context.user_data['target_fdv'] = target_fdv
     await update.message.reply_text("List each category with its percentage using this format: 'XX% - Category Name'. "
                                       "Don't forget to include the percent for your initial liquidity pool that will be burned! 🔥")
+    return TOKEN_DISTRIBUTION
+
+async def handle_token_distribution(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    token_distribution = update.message.text
+    
+    if not is_valid_token_distribution(token_distribution):
+        await update.message.reply_text("Please enter a valid vesting schedule format. Ensure the total percentage equals 100%. 💔 Example: 50% - Team\n20% - Advisors\n30% - Liquidity")
+        return TOKEN_DISTRIBUTION  # Stay in the same state to ask for the vesting schedule again
+    
+    context.user_data['token_distribution'] = token_distribution
+    await update.message.reply_text("Let's move on to the Vesting Schedule.\n\n"
+                                      "For each category, specify:\n"
+                                      "• Cliff period (locked period before first unlock) in months\n"
+                                      "• Initial unlock percentage (TGE unlock)\n"
+                                      "• Vesting duration and details (in months)\n\n"
+                                      "Example format:\n"
+                                      "Team (20%):\n"
+                                      "• 3 month cliff\n"
+                                      "• 0% initial unlock\n"
+                                      "• 12 months linear vesting\n\n"
+                                      "Community (69%):\n"
+                                      "• 0 month cliff\n"
+                                      "• 10% initial unlock\n"
+                                      "• 6 months linear vesting\n\n"
+                                      "Please provide vesting details for your categories (copy - paste - complete):\n\n"
+                                      f"Based on their previous answer ({context.user_data['token_distribution']}):")
     return VESTING_SCHEDULE
 
+def is_valid_token_distribution(token_distribution: str) -> bool:
+    lines = token_distribution.splitlines()
+    total_percentage = 0
+
+    for line in lines:
+        line = line.strip()
+        if not line:  # Skip empty lines
+            continue
+        parts = line.split('-')
+        if len(parts) != 2:
+            return False  # Must be in the format 'XX% - Category Name'
+        
+        percentage_part = parts[0].strip()
+        category_part = parts[1].strip()
+
+        # Check if the percentage part is valid
+        if not percentage_part.endswith('%') or not percentage_part[:-1].isdigit():
+            return False  # Must be a valid percentage
+
+        # Add to total percentage
+        total_percentage += int(percentage_part[:-1])  # Convert to integer and add
+
+    return total_percentage == 100  # Check if total percentage equals 100
+
+vesting_schedule_details = []
 async def handle_vesting_schedule(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    context.user_data['vesting_schedule'] = update.message.text
+    vesting_schedule = update.message.text
+    
+    if not is_valid_vesting_schedule(vesting_schedule):
+        await update.message.reply_text("Please enter a valid vesting schedule format. Ensure the total percentage equals 100%. 💔")
+        return VESTING_SCHEDULE  # Stay in the same state to ask for the vesting schedule again
+    
+    context.user_data['vesting_schedule'] = vesting_schedule
+    vesting_schedule_details = extract_vesting_schedule(vesting_schedule)
+    print('vesting_schedule_details', vesting_schedule_details)
     await update.message.reply_text("Project Roadmap & Team 🗺️\n\n"
                                       "Please outline your quarterly roadmap for the next 6-12 months. "
                                       "For each quarter, list 2-3 key objectives in bullet points.")
     return ROADMAP
+
+
+def extract_vesting_schedule(vesting_schedule: str) -> list:
+    lines = vesting_schedule.splitlines()
+    result = []
+    current_category = None
+
+    for line in lines:
+        line = line.strip()
+        if not line:  # Skip empty lines
+            continue
+        
+        # Check if the line is a category
+        if ':' in line:
+            if current_category:  # If we have a current category, save it before moving to the next
+                result.append(current_category)
+
+            parts = line.split(':')
+            category_name = parts[0].strip()
+            current_category = [category_name, []]  # Initialize the current category with an empty list for details
+        else:
+            # Process detail lines
+            if current_category is not None and line.startswith('•'):
+                detail = line[1:].strip()  # Remove the bullet point
+                # Extract the number of months from the detail
+                if "month cliff" in detail:
+                    months = int(detail.split()[0])  # Get the number of months
+                    current_category[1].append(months)
+                elif "initial unlock" in detail:
+                    percentage = int(detail.split()[0].replace('%', ''))  # Get the percentage
+                    current_category[1].append(percentage)
+                elif "months linear vesting" in detail:
+                    months = int(detail.split()[0])  # Get the number of months
+                    current_category[1].append(months)
+
+    # Append the last category if it exists
+    if current_category:
+        result.append(current_category)
+
+    return result
+
+def is_valid_vesting_schedule(vesting_schedule: str) -> bool:
+    # lines = vesting_schedule.splitlines()
+    # print('lines', lines)
+    
+    # for line in lines:
+    #     line = line.strip()
+    #     print('line', line)
+    #     if not line:  # Skip empty lines
+    #         continue
+    #     parts = line.split(':')
+    #     print('parts', parts)
+    #     if len(parts) != 2:
+    #         print(parts)
+    #         print('Must be in the format "Category (XX%):"')
+    #         return False  # Must be in the format 'Category (XX%):'
+
+    #     category_part = parts[0].strip()
+    #     details_part = parts[1].strip()
+    #     print('details_part', details_part)
+    #     # Check if the details part contains valid vesting details
+    #     details_lines = details_part.splitlines()
+    #     if len(details_lines) < 3:  # Must have at least 3 details
+    #         print('details_lines', details_lines)
+    #         print('Must have at least 3 details')
+    #         return False
+
+    #     # Check each detail line
+    #     for detail in details_lines:
+    #         detail = detail.strip()
+    #         if not detail:  # Skip empty lines
+    #             continue
+    #         if not (detail.startswith('•') and len(detail) > 1):
+    #             print('Each detail must start with "•"')
+    #             return False  # Each detail must start with '•'
+
+    #         # Additional checks for specific details
+    #         if "month cliff" not in detail and "TGE unlock" not in detail and "months linear vesting" not in detail:
+    #             print('Details must specify cliff, TGE unlock, and vesting duration')
+    #             return False  # Must specify cliff, TGE unlock, and vesting duration
+
+    return True
 
 async def handle_roadmap(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     context.user_data['roadmap'] = update.message.text
@@ -162,7 +349,11 @@ async def summary(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         f"Competitors: {context.user_data['competitors']} 🔍\n"
         f"Differentiators: {context.user_data['differentiators']} 💪✨\n"
         f"Token Metrics: {context.user_data['token_metrics']} 📊\n"
+        f"Initial Supply at TGE: {context.user_data['initial_supply']} 🔓\n"
+        f"Target FDV: {context.user_data['target_fdv']} 💰\n"
+        f"Token Distribution: {context.user_data['token_distribution']} 📊\n"
         f"Vesting Schedule: {context.user_data['vesting_schedule']} ⏳\n"
+        f"Vesting Schedule Details: {context.user_data['vesting_schedule_details']} ⏳\n"
         f"Roadmap: {context.user_data['roadmap']} 🗺️\n"
         f"Team Info: {context.user_data['team_info']} 👥\n"
         f"Essential Links: {context.user_data['essential_links']} 🔗\n"
@@ -190,6 +381,9 @@ def main():
             COMPETITORS: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_competitors)],
             DIFFERENTIATORS: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_differentiators)],
             TOKEN_METRICS: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_token_metrics)],
+            INITIAL_SUPPLY: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_initial_supply)],
+            TARGET_FDV: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_target_fdv)],
+            TOKEN_DISTRIBUTION: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_token_distribution)],
             VESTING_SCHEDULE: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_vesting_schedule)],
             ROADMAP: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_roadmap)],
             TEAM_INFO: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_team_info)],
