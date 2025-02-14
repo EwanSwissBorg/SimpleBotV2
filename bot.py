@@ -32,8 +32,9 @@ load_dotenv()
     ROADMAP, 
     TEAM_INFO, 
     ESSENTIAL_LINKS, 
-    ADDITIONAL_INFO
-) = range(19)
+    ADDITIONAL_INFO,
+    DEX_INFO
+) = range(20)
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     await update.message.reply_text(
@@ -325,7 +326,13 @@ async def handle_essential_links(update: Update, context: ContextTypes.DEFAULT_T
     context.user_data['essential_links'] = update.message.text
     await update.message.reply_text("Additional Information 📝\n\n"
                                       "9. Launch Strategy & Vision\n"
-                                      "• Why have you chosen to pursue a DEX-only launch? 🤔\n"
+                                      "• Why have you chosen to pursue a DEX-only launch? 🤔")
+    return DEX_INFO
+
+async def handle_dex_info(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    context.user_data['dex_info'] = update.message.text
+    await update.message.reply_text("Additional Information 📝\n\n"
+                                      "9. Launch Strategy & Vision\n"
                                       "• Do you have a powerful quote from a founder or notable personality about your project? "
                                       "Please include their name and title 💭")
     return ADDITIONAL_INFO
@@ -353,11 +360,11 @@ async def summary(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         f"Target FDV: {context.user_data['target_fdv']} 💰\n"
         f"Token Distribution: {context.user_data['token_distribution']} 📊\n"
         f"Vesting Schedule: {context.user_data['vesting_schedule']} ⏳\n"
-        f"Vesting Schedule Details: {context.user_data['vesting_schedule_details']} ⏳\n"
         f"Roadmap: {context.user_data['roadmap']} 🗺️\n"
         f"Team Info: {context.user_data['team_info']} 👥\n"
         f"Essential Links: {context.user_data['essential_links']} 🔗\n"
-        f"Additional Info: {context.user_data['additional_info']} 📝\n\n"
+        f"Additional Info: {context.user_data['additional_info']} 📝\n"
+        f"DEX Info: {context.user_data['dex_info']} 📝\n\n"
         "✨ Thank you for submitting your project to BorgPad! ✨"
     )
     
@@ -389,6 +396,7 @@ def main():
             TEAM_INFO: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_team_info)],
             ESSENTIAL_LINKS: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_essential_links)],
             ADDITIONAL_INFO: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_additional_info)],
+            DEX_INFO: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_dex_info)],
         },
         fallbacks=[],
     )
