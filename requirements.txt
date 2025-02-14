@@ -1,0 +1,4 @@
+python-telegram-bot==20.0  # For Telegram bot functionality
+python-dotenv==0.19.2       # For loading environment variables from .env files
+matplotlib==3.5.1           # For creating graphs and charts
+numpy==1.21.2               # For numerical operations
