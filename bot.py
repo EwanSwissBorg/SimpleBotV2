@@ -10,6 +10,7 @@ from telegram.ext import (
 import os
 from dotenv import load_dotenv
 import matplotlib.pyplot as plt
+import numpy as np
 load_dotenv()
 
 # Définition des états de la conversation
@@ -31,7 +32,7 @@ load_dotenv()
     VESTING_SCHEDULE,
     ROADMAP, 
     TEAM_INFO, 
-    ESSENTIAL_LINKS, 
+    ESSENTIAL_LINKS,
     ADDITIONAL_INFO,
     DEX_INFO
 ) = range(20)
@@ -123,11 +124,13 @@ def is_valid_token_metrics(metrics: str) -> bool:
     parts = metrics.split(',')
     # Check if the last part is a valid number
     if not parts[0].isdigit():
+        print("the first part is not a number")
         return False
 
     # Check if all parts except the last one are valid numbers
     for part in parts[1:]:
         if not part.isdigit() or len(part) != 3:  # Each part must be a digit and exactly 3 digits long
+            print("the part is not a number or not 3 digits long")
             return False
 
     return True  # Valid format
@@ -205,7 +208,7 @@ def is_valid_token_distribution(token_distribution: str) -> bool:
 
     return total_percentage == 100  # Check if total percentage equals 100
 
-vesting_schedule_details = []
+
 async def handle_vesting_schedule(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     vesting_schedule = update.message.text
     
@@ -214,13 +217,10 @@ async def handle_vesting_schedule(update: Update, context: ContextTypes.DEFAULT_
         return VESTING_SCHEDULE  # Stay in the same state to ask for the vesting schedule again
     
     context.user_data['vesting_schedule'] = vesting_schedule
-    vesting_schedule_details = extract_vesting_schedule(vesting_schedule)
-    print('vesting_schedule_details', vesting_schedule_details)
     await update.message.reply_text("Project Roadmap & Team 🗺️\n\n"
                                       "Please outline your quarterly roadmap for the next 6-12 months. "
                                       "For each quarter, list 2-3 key objectives in bullet points.")
     return ROADMAP
-
 
 def extract_vesting_schedule(vesting_schedule: str) -> list:
     lines = vesting_schedule.splitlines()
@@ -347,7 +347,6 @@ def create_pie_chart(token_distribution: str) -> str:
     # Parse the token distribution
     categories = []
     percentages = []
-    print('token_distribution', token_distribution)
     
     lines = token_distribution.splitlines()
     for line in lines:
@@ -371,10 +370,98 @@ def create_pie_chart(token_distribution: str) -> str:
 
     # Save the pie chart as an image
     chart_path = 'token_distribution_chart.png'
-    # plt.savefig(chart_path)
-    # plt.close()  # Close the plot to free memory
+    plt.savefig(chart_path)
+    plt.close()  # Close the plot to free memory
 
     return chart_path
+
+def create_cumulative_emission_graph(vesting_schedule_details: list, token_distribution: dict) -> str:
+    # Prepare data for plotting
+    cumulative_emissions = {}
+
+    print('vesting_schedule_details', vesting_schedule_details)
+    print('token_distribution', token_distribution)
+    
+    for category_with_percentage, details in vesting_schedule_details:
+        # Extract the category name without the percentage
+        category = category_with_percentage.split('(')[0].strip()
+
+        # Ensure details have the expected length
+        if len(details) != 3:
+            print(f"Invalid details for category '{category}': {details}")
+            continue  # Skip this category if details are not as expected
+
+        cliff_months = details[0]
+        initial_unlock = details[1]
+        linear_vesting_months = details[2]
+
+        # Calculate the total months for the vesting schedule
+        total_months = cliff_months + linear_vesting_months
+
+        # Initialize cumulative emissions for this category
+        cumulative_emissions[category] = np.zeros(total_months + 1)
+
+        # Calculate emissions over time
+        for month in range(total_months + 1):
+            if month < cliff_months:
+                cumulative_emissions[category][month] = 0  # No emissions during the cliff period
+            elif month == cliff_months:
+                cumulative_emissions[category][month] = initial_unlock  # Initial unlock at cliff
+            else:
+                # Calculate linear vesting emissions
+                vesting_amount = (100 - initial_unlock) / linear_vesting_months
+                cumulative_emissions[category][month] = initial_unlock + vesting_amount * (month - cliff_months)
+
+    # Debugging: Print cumulative emissions
+    print("Cumulative Emissions:", cumulative_emissions)
+
+    # Create a stacked area plot
+    plt.figure(figsize=(10, 6))
+    for category, emissions in cumulative_emissions.items():
+        plt.fill_between(range(len(emissions)), emissions, label=f"{category} ({token_distribution.get(category, 0)}%)")
+
+    plt.title('Cumulative Token Emission Schedule')
+    plt.xlabel('Months')
+    plt.ylabel('Cumulative Tokens in Circulation (in Millions)')
+    plt.xticks(range(len(emissions)))  # Set x-ticks to show each month
+    plt.legend(title='Token Categories')
+    plt.grid()
+    
+    # Save the graph as an image
+    graph_path = 'cumulative_emission_graph.png'
+    plt.savefig(graph_path)
+    plt.close()  # Close the plot to free memory
+
+    return graph_path
+
+def parse_token_distribution(token_distribution: str) -> dict:
+    distribution = {}
+    
+    # Split the input by lines
+    lines = token_distribution.splitlines()
+    
+    for line in lines:
+        line = line.strip()
+        if not line:  # Skip empty lines
+            continue
+        
+        # Split by the '-' character
+        parts = line.split('-')
+        if len(parts) != 2:
+            print(f"Invalid format for line: {line}")
+            continue  # Skip invalid lines
+        
+        percentage_part = parts[0].strip()
+        category_part = parts[1].strip()
+
+        # Extract the percentage and convert to integer
+        if percentage_part.endswith('%'):
+            percentage = int(percentage_part[:-1])  # Remove '%' and convert to int
+            distribution[category_part] = percentage
+        else:
+            print(f"Invalid percentage format for line: {line}")
+
+    return distribution
 
 async def summary(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     recap = (
@@ -408,6 +495,18 @@ async def summary(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     chart_path = create_pie_chart(context.user_data['token_distribution'])
     with open(chart_path, 'rb') as chart_file:
         await update.message.reply_photo(photo=chart_file)
+
+    # Parse the token distribution
+    token_distribution = parse_token_distribution(context.user_data['token_distribution'])
+    vesting_schedule_details = extract_vesting_schedule(context.user_data['vesting_schedule'])
+    print('vesting_schedule_details', vesting_schedule_details)
+    # Create and send the cumulative emission graph
+    cumulative_graph_path = create_cumulative_emission_graph(vesting_schedule_details, token_distribution)
+    with open(cumulative_graph_path, 'rb') as cumulative_graph_file:
+        await update.message.reply_photo(photo=cumulative_graph_file)
+
+    return ConversationHandler.END
+
 
 
 def main():
