@@ -9,7 +9,8 @@ from telegram.ext import (
 )
 import os
 from dotenv import load_dotenv
-
+import matplotlib.pyplot as plt
+import numpy as np
 load_dotenv()
 
 # Définition des états de la conversation
@@ -30,8 +31,8 @@ load_dotenv()
     TOKEN_DISTRIBUTION,
     VESTING_SCHEDULE,
     ROADMAP, 
-    TEAM_INFO, 
-    ESSENTIAL_LINKS, 
+    TEAM_INFO,
+    ESSENTIAL_LINKS,
     ADDITIONAL_INFO,
     DEX_INFO
 ) = range(20)
@@ -123,11 +124,13 @@ def is_valid_token_metrics(metrics: str) -> bool:
     parts = metrics.split(',')
     # Check if the last part is a valid number
     if not parts[0].isdigit():
+        print("the first part is not a number")
         return False
 
     # Check if all parts except the last one are valid numbers
     for part in parts[1:]:
         if not part.isdigit() or len(part) != 3:  # Each part must be a digit and exactly 3 digits long
+            print("the part is not a number or not 3 digits long")
             return False
 
     return True  # Valid format
@@ -205,7 +208,7 @@ def is_valid_token_distribution(token_distribution: str) -> bool:
 
     return total_percentage == 100  # Check if total percentage equals 100
 
-vesting_schedule_details = []
+
 async def handle_vesting_schedule(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     vesting_schedule = update.message.text
     
@@ -214,13 +217,10 @@ async def handle_vesting_schedule(update: Update, context: ContextTypes.DEFAULT_
         return VESTING_SCHEDULE  # Stay in the same state to ask for the vesting schedule again
     
     context.user_data['vesting_schedule'] = vesting_schedule
-    vesting_schedule_details = extract_vesting_schedule(vesting_schedule)
-    print('vesting_schedule_details', vesting_schedule_details)
     await update.message.reply_text("Project Roadmap & Team 🗺️\n\n"
                                       "Please outline your quarterly roadmap for the next 6-12 months. "
                                       "For each quarter, list 2-3 key objectives in bullet points.")
     return ROADMAP
-
 
 def extract_vesting_schedule(vesting_schedule: str) -> list:
     lines = vesting_schedule.splitlines()
@@ -342,6 +342,159 @@ async def handle_additional_info(update: Update, context: ContextTypes.DEFAULT_T
     await summary(update, context)  # Appel de la fonction summary ici
     return ConversationHandler.END
 
+
+def create_pie_chart(token_distribution: str) -> str:
+    # Parse the token distribution
+    categories = []
+    percentages = []
+    
+    lines = token_distribution.splitlines()
+    for line in lines:
+        line = line.strip()
+        if not line:
+            continue
+        parts = line.split('-')
+        if len(parts) == 2:
+            percentage_part = parts[0].strip()
+            category_part = parts[1].strip()
+            if percentage_part.endswith('%'):
+                percentage = int(percentage_part[:-1])  # Remove '%' and convert to int
+                categories.append(category_part)
+                percentages.append(percentage)
+
+    # Create a pie chart
+    plt.figure(figsize=(8, 8))
+    plt.pie(percentages, labels=categories, autopct='%1.1f%%', startangle=140)
+    plt.title('Token Distribution')
+    plt.axis('equal')  # Equal aspect ratio ensures that pie is drawn as a circle.
+
+    # Save the pie chart as an image
+    chart_path = 'token_distribution_chart.png'
+    plt.savefig(chart_path)
+    plt.close()  # Close the plot to free memory
+
+    return chart_path
+
+def create_cumulative_emission_graph(vesting_schedule_details: list, token_distribution: dict) -> str:
+    # Determine the maximum total months from all categories
+    max_total_months = 0
+    for _, details in vesting_schedule_details:
+        cliff_months = details[0]
+        linear_vesting_months = details[2]
+        total_months = cliff_months + linear_vesting_months
+        max_total_months = max(max_total_months, total_months)
+    
+    # Add 5 months to the maximum
+    max_total_months += 5
+
+    # Initialize emissions dictionary for each category
+    emissions_by_category = {}
+    
+    # Calculate emissions for each category
+    for category_with_percentage, details in vesting_schedule_details:
+        # Extract category name and percentage
+        category, percentage_str = category_with_percentage.split('(')
+        category = category.strip()
+        percentage = float(percentage_str.strip(' %)'))  # Keep as percentage (not decimal)
+
+        # Get vesting details
+        cliff_months = details[0]
+        initial_unlock = details[1]  # Keep as percentage
+        linear_vesting_months = details[2]
+
+        # Create array for this category's emissions
+        emissions = np.zeros(max_total_months + 1)
+        
+        # Calculate initial unlock at TGE
+        initial_amount = percentage * (initial_unlock / 100)
+        emissions[0] = initial_amount
+        
+        # Calculate linear vesting after cliff
+        if linear_vesting_months > 0:
+            remaining_amount = percentage - initial_amount
+            monthly_emission = remaining_amount / linear_vesting_months
+            
+            for month in range(cliff_months + 1, min(cliff_months + linear_vesting_months + 1, max_total_months + 1)):
+                emissions[month] = monthly_emission
+        
+        # Convert to cumulative sum
+        emissions = np.cumsum(emissions)
+        
+        # Extend the final value for the remaining months
+        final_value = emissions[cliff_months + linear_vesting_months] if cliff_months + linear_vesting_months < max_total_months else emissions[-1]
+        emissions[cliff_months + linear_vesting_months:] = final_value
+        
+        emissions_by_category[category] = emissions
+
+    # Create the stacked area plot
+    plt.figure(figsize=(12, 8))
+    
+    # Use a color palette similar to the example
+    colors = ['salmon', 'mediumpurple', 'lightgreen', 'pink', 'lightblue', 
+              'plum', 'rosybrown', 'mediumseagreen']
+    
+    # Plot each category
+    categories = list(emissions_by_category.keys())
+    emissions_data = [emissions_by_category[cat] for cat in categories]
+    
+    # Create stacked area plot
+    plt.stackplot(range(max_total_months + 1), emissions_data, 
+                 labels=categories, colors=colors, alpha=0.6)
+
+    # Customize the plot
+    plt.title('Cumulative Token Emission Schedule')
+    plt.xlabel('Months')
+    plt.ylabel('Cumulative Tokens in Circulation (%)')
+    plt.grid(True, alpha=0.3)
+    plt.legend(title='Token Categories', bbox_to_anchor=(1.05, 1), loc='upper left')
+    
+    # Set axis limits
+    plt.xlim(0, max_total_months)
+    plt.ylim(0, 100)
+
+    # Add "100%" text near the top
+    plt.text(max_total_months - 5, 95, '100%', 
+             horizontalalignment='right', verticalalignment='top')
+
+    # Adjust layout to prevent label cutoff
+    plt.tight_layout()
+
+    # Save the graph
+    graph_path = 'cumulative_emission_graph.png'
+    plt.savefig(graph_path, bbox_inches='tight', dpi=300)
+    plt.close()
+
+    return graph_path
+
+def parse_token_distribution(token_distribution: str) -> dict:
+    distribution = {}
+    
+    # Split the input by lines
+    lines = token_distribution.splitlines()
+    
+    for line in lines:
+        line = line.strip()
+        if not line:  # Skip empty lines
+            continue
+        
+        # Split by the '-' character
+        parts = line.split('-')
+        if len(parts) != 2:
+            print(f"Invalid format for line: {line}")
+            continue  # Skip invalid lines
+        
+        percentage_part = parts[0].strip()
+        category_part = parts[1].strip()
+
+        # Extract the percentage and convert to integer
+        if percentage_part.endswith('%'):
+            percentage = int(percentage_part[:-1])  # Remove '%' and convert to int
+            distribution[category_part] = percentage
+        else:
+            print(f"Invalid percentage format for line: {line}")
+
+    return distribution
+
 async def summary(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     recap = (
         "🎉 Here's a summary of your project submission:\n\n"
@@ -369,6 +522,24 @@ async def summary(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     )
     
     await update.message.reply_text(recap)
+
+    # Create and send the pie chart
+    chart_path = create_pie_chart(context.user_data['token_distribution'])
+    with open(chart_path, 'rb') as chart_file:
+        await update.message.reply_photo(photo=chart_file)
+
+    # Parse the token distribution
+    token_distribution = parse_token_distribution(context.user_data['token_distribution'])
+    vesting_schedule_details = extract_vesting_schedule(context.user_data['vesting_schedule'])
+    print('vesting_schedule_details', vesting_schedule_details)
+    # Create and send the cumulative emission graph
+    cumulative_graph_path = create_cumulative_emission_graph(vesting_schedule_details, token_distribution)
+    with open(cumulative_graph_path, 'rb') as cumulative_graph_file:
+        await update.message.reply_photo(photo=cumulative_graph_file)
+
+    return ConversationHandler.END
+
+
 
 def main():
     app = ApplicationBuilder().token(os.getenv("TELEGRAM_BOT_TOKEN")).build()
