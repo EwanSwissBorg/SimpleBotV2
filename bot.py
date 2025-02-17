@@ -12,11 +12,8 @@ from dotenv import load_dotenv
 import matplotlib.pyplot as plt
 import numpy as np
 import tweepy
-import redis
-import json
-load_dotenv()
 
-redis_client = redis.Redis(host='localhost', port=6379, db=0)
+load_dotenv()
 
 # Définition des états de la conversation
 (
@@ -76,16 +73,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     auth = setup_twitter_auth()
     try:
         redirect_url = auth.get_authorization_url()
-        request_token = auth.request_token
-        
         print(f"Generated Twitter auth URL: {redirect_url}")  # Debug log
-        
-        # Stocker le request_token dans Redis
-        redis_client.setex(
-            request_token['oauth_token'],
-            3600,
-            json.dumps(request_token)
-        )
         
         keyboard = [[InlineKeyboardButton("Connect with Twitter", url=redirect_url)]]
         reply_markup = InlineKeyboardMarkup(keyboard)
