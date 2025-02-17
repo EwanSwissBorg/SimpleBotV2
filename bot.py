@@ -12,6 +12,7 @@ from dotenv import load_dotenv
 import matplotlib.pyplot as plt
 import numpy as np
 import tweepy
+from database import init_db, save_project_data  # Ajoutez cet import
 
 load_dotenv()
 
@@ -215,14 +216,18 @@ async def handle_token_distribution(update: Update, context: ContextTypes.DEFAUL
                                       "• Initial unlock percentage (TGE unlock)\n"
                                       "• Vesting duration and details (in months)\n\n"
                                       "Example format:\n"
-                                      "Team (20%):\n"
+                                      "Team (50%):\n"
                                       "• 3 month cliff\n"
                                       "• 0% initial unlock\n"
                                       "• 12 months linear vesting\n\n"
-                                      "Community (69%):\n"
-                                      "• 0 month cliff\n"
+                                      "Advisors (20%):\n"
+                                      "• 2 month cliff\n"
                                       "• 10% initial unlock\n"
                                       "• 6 months linear vesting\n\n"
+                                      "Liquidity (30%):\n"
+                                      "• 0 month cliff\n"
+                                      "• 20% initial unlock\n"
+                                      "• 0 months linear vesting\n\n"
                                       "Please provide vesting details for your categories (copy - paste - complete):\n\n"
                                       f"Based on their previous answer ({context.user_data['token_distribution']}):")
     return VESTING_SCHEDULE
@@ -382,7 +387,16 @@ async def handle_dex_info(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
 async def handle_additional_info(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     context.user_data['additional_info'] = update.message.text
-    await summary(update, context)  # Appel de la fonction summary ici
+    
+    # Sauvegarder toutes les données dans la base de données
+    try:
+        save_project_data(context.user_data)
+        await update.message.reply_text("✅ Vos informations ont été sauvegardées avec succès!")
+    except Exception as e:
+        print(f"Erreur lors de la sauvegarde : {str(e)}")
+        await update.message.reply_text("❌ Une erreur est survenue lors de la sauvegarde des données.")
+    
+    await summary(update, context)
     return ConversationHandler.END
 
 
@@ -495,10 +509,6 @@ def create_cumulative_emission_graph(vesting_schedule_details: list, token_distr
     plt.xlim(0, max_total_months)
     plt.ylim(0, 100)
 
-    # Add "100%" text near the top
-    plt.text(max_total_months - 5, 95, '100%', 
-             horizontalalignment='right', verticalalignment='top')
-
     # Adjust layout to prevent label cutoff
     plt.tight_layout()
 
@@ -539,8 +549,9 @@ def parse_token_distribution(token_distribution: str) -> dict:
     return distribution
 
 async def summary(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    recap = (
-        "🎉 Here's a summary of your project submission:\n\n"
+    # Diviser le récapitulatif en plusieurs messages plus petits
+    part1 = (
+        "🎉 Here's a summary of your project submission (Part 1/3):\n\n"
         f"Project Name: {context.user_data['project_name']} 🏷️\n"
         f"Token Ticker: {context.user_data['token_ticker']} 💎\n"
         f"Elevator Pitch: {context.user_data['elevator_pitch']} 🚀\n"
@@ -548,6 +559,10 @@ async def summary(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         f"Solution: {context.user_data['solution']} 💡\n"
         f"Technology: {context.user_data['technology']} ⚙️\n"
         f"Target Market: {context.user_data['target_market']} 🎯\n"
+    )
+
+    part2 = (
+        "🎉 Project Summary (Part 2/3):\n\n"
         f"Growth Strategy: {context.user_data['growth_strategy']} 📈\n"
         f"Competitors: {context.user_data['competitors']} 🔍\n"
         f"Differentiators: {context.user_data['differentiators']} 💪✨\n"
@@ -555,6 +570,10 @@ async def summary(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         f"Initial Supply at TGE: {context.user_data['initial_supply']} 🔓\n"
         f"Target FDV: {context.user_data['target_fdv']} 💰\n"
         f"Token Distribution: {context.user_data['token_distribution']} 📊\n"
+    )
+
+    part3 = (
+        "🎉 Project Summary (Part 3/3):\n\n"
         f"Vesting Schedule: {context.user_data['vesting_schedule']} ⏳\n"
         f"Roadmap: {context.user_data['roadmap']} 🗺️\n"
         f"Team Info: {context.user_data['team_info']} 👥\n"
@@ -564,18 +583,18 @@ async def summary(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         "✨ Thank you for submitting your project to BorgPad! ✨"
     )
     
-    await update.message.reply_text(recap)
+    # Envoyer chaque partie séparément
+    await update.message.reply_text(part1)
+    await update.message.reply_text(part2)
+    await update.message.reply_text(part3)
 
-    # Create and send the pie chart
+    # Créer et envoyer les graphiques
     chart_path = create_pie_chart(context.user_data['token_distribution'])
     with open(chart_path, 'rb') as chart_file:
         await update.message.reply_photo(photo=chart_file)
 
-    # Parse the token distribution
     token_distribution = parse_token_distribution(context.user_data['token_distribution'])
     vesting_schedule_details = extract_vesting_schedule(context.user_data['vesting_schedule'])
-    print('vesting_schedule_details', vesting_schedule_details)
-    # Create and send the cumulative emission graph
     cumulative_graph_path = create_cumulative_emission_graph(vesting_schedule_details, token_distribution)
     with open(cumulative_graph_path, 'rb') as cumulative_graph_file:
         await update.message.reply_photo(photo=cumulative_graph_file)
@@ -585,6 +604,9 @@ async def summary(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 
 
 def main():
+    # Initialiser la base de données
+    init_db()
+    
     app = ApplicationBuilder().token(os.getenv("TELEGRAM_BOT_TOKEN")).build()
 
     # Create conversation handler
