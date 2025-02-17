@@ -2,25 +2,34 @@ from flask import Flask, request, redirect
 import tweepy
 import os
 from dotenv import load_dotenv
-import redis
-import json
 from telegram import Bot
 
 load_dotenv()
 
 app = Flask(__name__)
-redis_client = redis.Redis(host='localhost', port=6379, db=0)
 
-# Initialiser le bot Telegram
-telegram_bot = Bot(token=os.getenv("TELEGRAM_BOT_TOKEN"))
+# Stockage temporaire en mémoire (attention: ceci n'est pas idéal pour la production)
+temp_tokens = {}
 
 def setup_twitter_auth():
+    callback_url = os.getenv("CALLBACK_URL")
     auth = tweepy.OAuthHandler(
         os.getenv("TWITTER_API_KEY"),
         os.getenv("TWITTER_API_SECRET"),
-        os.getenv("CALLBACK_URL")
+        callback_url
     )
     return auth
+
+@app.route('/start_auth')
+def start_auth():
+    auth = setup_twitter_auth()
+    try:
+        redirect_url = auth.get_authorization_url()
+        # Stocker le request_token temporairement
+        temp_tokens[auth.request_token['oauth_token']] = auth.request_token
+        return redirect(redirect_url)
+    except Exception as e:
+        return f"Erreur lors de l'authentification : {str(e)}"
 
 @app.route('/callback')
 def twitter_callback():
@@ -28,15 +37,12 @@ def twitter_callback():
     oauth_token = request.args.get('oauth_token')
     
     print(f"Received oauth_token: {oauth_token}")
-    stored_token = redis_client.get(oauth_token)
-    print(f"Stored token from Redis: {stored_token}")
-    
-    if not stored_token:
-        return f"Token {oauth_token} non trouvé dans Redis"
     
     try:
-        request_token = json.loads(stored_token)
-        print(f"Decoded request_token: {request_token}")
+        # Récupérer le request_token stocké
+        request_token = temp_tokens.get(oauth_token)
+        if not request_token:
+            return "Token non trouvé"
         
         auth = setup_twitter_auth()
         auth.request_token = request_token
@@ -45,10 +51,13 @@ def twitter_callback():
         api = tweepy.API(auth)
         user = api.verify_credentials()
         
-        # Redirection vers le nouveau bot Telegram
+        # Nettoyer le token utilisé
+        temp_tokens.pop(oauth_token, None)
+        
         return redirect(f"https://t.me/simpleewanv2bot?start=auth_success_{user.screen_name}")
         
     except Exception as e:
+        print(f"Error: {str(e)}")
         return f"Erreur détaillée : {str(e)}"
 
 if __name__ == '__main__':

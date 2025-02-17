@@ -12,11 +12,8 @@ from dotenv import load_dotenv
 import matplotlib.pyplot as plt
 import numpy as np
 import tweepy
-import redis
-import json
-load_dotenv()
 
-redis_client = redis.Redis(host='localhost', port=6379, db=0)
+load_dotenv()
 
 # Définition des états de la conversation
 (
@@ -73,21 +70,12 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         return PROJECT_NAME
 
     # Si ce n'est pas un retour d'auth, procéder avec l'authentification Twitter
-    auth = setup_twitter_auth()
     try:
-        redirect_url = auth.get_authorization_url()
-        request_token = auth.request_token
+        # Utiliser directement l'URL de start_auth
+        auth_url = f"{os.getenv('CALLBACK_URL').rsplit('/', 1)[0]}/start_auth"
+        print(f"Auth URL: {auth_url}")  # Debug log
         
-        print(f"Generated Twitter auth URL: {redirect_url}")  # Debug log
-        
-        # Stocker le request_token dans Redis
-        redis_client.setex(
-            request_token['oauth_token'],
-            3600,
-            json.dumps(request_token)
-        )
-        
-        keyboard = [[InlineKeyboardButton("Connect with Twitter", url=redirect_url)]]
+        keyboard = [[InlineKeyboardButton("Connect with Twitter", url=auth_url)]]
         reply_markup = InlineKeyboardMarkup(keyboard)
         await update.message.reply_text(
             "Gm! 👋 I'm the BorgPad Curator Bot.\n\n"
