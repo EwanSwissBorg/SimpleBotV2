@@ -15,6 +15,7 @@ load_dotenv()
 
 # Définition des états de la conversation
 (
+    USERNAME,
     PROJECT_NAME, 
     TOKEN_TICKER, 
     ELEVATOR_PITCH, 
@@ -35,12 +36,20 @@ load_dotenv()
     ESSENTIAL_LINKS,
     ADDITIONAL_INFO,
     DEX_INFO
-) = range(20)
+) = range(21)
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     await update.message.reply_text(
         "Gm! 👋 I'm the BorgPad Curator Bot. I'll help you create a professional data room "
-        "for your project. Let's start with your basic Project Information.\n\n"
+        "for your project.\n\n"
+        "First, what's your username? 👤"
+    )
+    return USERNAME
+
+async def handle_username(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    context.user_data['username'] = update.message.text
+    await update.message.reply_text(
+        "Great! Let's start with your basic Project Information.\n\n"
         "What is your project name? 🏷️"
     )
     return PROJECT_NAME
@@ -548,6 +557,7 @@ def main():
     conv_handler = ConversationHandler(
         entry_points=[CommandHandler('start', start)],
         states={
+            USERNAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_username)],
             PROJECT_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_project_name)],
             TOKEN_TICKER: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_token_ticker)],
             ELEVATOR_PITCH: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_elevator_pitch)],
