@@ -31,7 +31,7 @@ load_dotenv()
     TOKEN_DISTRIBUTION,
     VESTING_SCHEDULE,
     ROADMAP, 
-    TEAM_INFO, 
+    TEAM_INFO,
     ESSENTIAL_LINKS,
     ADDITIONAL_INFO,
     DEX_INFO
@@ -376,61 +376,93 @@ def create_pie_chart(token_distribution: str) -> str:
     return chart_path
 
 def create_cumulative_emission_graph(vesting_schedule_details: list, token_distribution: dict) -> str:
-    # Prepare data for plotting
-    cumulative_emissions = {}
-
-    print('vesting_schedule_details', vesting_schedule_details)
-    print('token_distribution', token_distribution)
-    
-    for category_with_percentage, details in vesting_schedule_details:
-        # Extract the category name without the percentage
-        category = category_with_percentage.split('(')[0].strip()
-
-        # Ensure details have the expected length
-        if len(details) != 3:
-            print(f"Invalid details for category '{category}': {details}")
-            continue  # Skip this category if details are not as expected
-
+    # Determine the maximum total months from all categories
+    max_total_months = 0
+    for _, details in vesting_schedule_details:
         cliff_months = details[0]
-        initial_unlock = details[1]
+        linear_vesting_months = details[2]
+        total_months = cliff_months + linear_vesting_months
+        max_total_months = max(max_total_months, total_months)
+    
+    # Add 5 months to the maximum
+    max_total_months += 5
+
+    # Initialize emissions dictionary for each category
+    emissions_by_category = {}
+    
+    # Calculate emissions for each category
+    for category_with_percentage, details in vesting_schedule_details:
+        # Extract category name and percentage
+        category, percentage_str = category_with_percentage.split('(')
+        category = category.strip()
+        percentage = float(percentage_str.strip(' %)'))  # Keep as percentage (not decimal)
+
+        # Get vesting details
+        cliff_months = details[0]
+        initial_unlock = details[1]  # Keep as percentage
         linear_vesting_months = details[2]
 
-        # Calculate the total months for the vesting schedule
-        total_months = cliff_months + linear_vesting_months
+        # Create array for this category's emissions
+        emissions = np.zeros(max_total_months + 1)
+        
+        # Calculate initial unlock at TGE
+        initial_amount = percentage * (initial_unlock / 100)
+        emissions[0] = initial_amount
+        
+        # Calculate linear vesting after cliff
+        if linear_vesting_months > 0:
+            remaining_amount = percentage - initial_amount
+            monthly_emission = remaining_amount / linear_vesting_months
+            
+            for month in range(cliff_months + 1, min(cliff_months + linear_vesting_months + 1, max_total_months + 1)):
+                emissions[month] = monthly_emission
+        
+        # Convert to cumulative sum
+        emissions = np.cumsum(emissions)
+        
+        # Extend the final value for the remaining months
+        final_value = emissions[cliff_months + linear_vesting_months] if cliff_months + linear_vesting_months < max_total_months else emissions[-1]
+        emissions[cliff_months + linear_vesting_months:] = final_value
+        
+        emissions_by_category[category] = emissions
 
-        # Initialize cumulative emissions for this category
-        cumulative_emissions[category] = np.zeros(total_months + 1)
+    # Create the stacked area plot
+    plt.figure(figsize=(12, 8))
+    
+    # Use a color palette similar to the example
+    colors = ['salmon', 'mediumpurple', 'lightgreen', 'pink', 'lightblue', 
+              'plum', 'rosybrown', 'mediumseagreen']
+    
+    # Plot each category
+    categories = list(emissions_by_category.keys())
+    emissions_data = [emissions_by_category[cat] for cat in categories]
+    
+    # Create stacked area plot
+    plt.stackplot(range(max_total_months + 1), emissions_data, 
+                 labels=categories, colors=colors, alpha=0.6)
 
-        # Calculate emissions over time
-        for month in range(total_months + 1):
-            if month < cliff_months:
-                cumulative_emissions[category][month] = 0  # No emissions during the cliff period
-            elif month == cliff_months:
-                cumulative_emissions[category][month] = initial_unlock  # Initial unlock at cliff
-            else:
-                # Calculate linear vesting emissions
-                vesting_amount = (100 - initial_unlock) / linear_vesting_months
-                cumulative_emissions[category][month] = initial_unlock + vesting_amount * (month - cliff_months)
-
-    # Debugging: Print cumulative emissions
-    print("Cumulative Emissions:", cumulative_emissions)
-
-    # Create a stacked area plot
-    plt.figure(figsize=(10, 6))
-    for category, emissions in cumulative_emissions.items():
-        plt.fill_between(range(len(emissions)), emissions, label=f"{category} ({token_distribution.get(category, 0)}%)")
-
+    # Customize the plot
     plt.title('Cumulative Token Emission Schedule')
     plt.xlabel('Months')
-    plt.ylabel('Cumulative Tokens in Circulation (in Millions)')
-    plt.xticks(range(len(emissions)))  # Set x-ticks to show each month
-    plt.legend(title='Token Categories')
-    plt.grid()
+    plt.ylabel('Cumulative Tokens in Circulation (%)')
+    plt.grid(True, alpha=0.3)
+    plt.legend(title='Token Categories', bbox_to_anchor=(1.05, 1), loc='upper left')
     
-    # Save the graph as an image
+    # Set axis limits
+    plt.xlim(0, max_total_months)
+    plt.ylim(0, 100)
+
+    # Add "100%" text near the top
+    plt.text(max_total_months - 5, 95, '100%', 
+             horizontalalignment='right', verticalalignment='top')
+
+    # Adjust layout to prevent label cutoff
+    plt.tight_layout()
+
+    # Save the graph
     graph_path = 'cumulative_emission_graph.png'
-    plt.savefig(graph_path)
-    plt.close()  # Close the plot to free memory
+    plt.savefig(graph_path, bbox_inches='tight', dpi=300)
+    plt.close()
 
     return graph_path
 
