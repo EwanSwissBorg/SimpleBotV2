@@ -70,12 +70,12 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         return PROJECT_NAME
 
     # Si ce n'est pas un retour d'auth, procéder avec l'authentification Twitter
-    auth = setup_twitter_auth()
     try:
-        redirect_url = auth.get_authorization_url()
-        print(f"Generated Twitter auth URL: {redirect_url}")  # Debug log
+        # Utiliser directement l'URL de start_auth
+        auth_url = f"{os.getenv('CALLBACK_URL').rsplit('/', 1)[0]}/start_auth"
+        print(f"Auth URL: {auth_url}")  # Debug log
         
-        keyboard = [[InlineKeyboardButton("Connect with Twitter", url=redirect_url)]]
+        keyboard = [[InlineKeyboardButton("Connect with Twitter", url=auth_url)]]
         reply_markup = InlineKeyboardMarkup(keyboard)
         await update.message.reply_text(
             "Gm! 👋 I'm the BorgPad Curator Bot.\n\n"
