@@ -51,10 +51,13 @@ def twitter_callback():
         api = tweepy.API(auth)
         user = api.verify_credentials()
         
+        # Récupérer l'URL de la photo de profil en haute qualité
+        profile_image_url = user.profile_image_url_https.replace('_normal', '')
+        
         # Nettoyer le token utilisé
         temp_tokens.pop(oauth_token, None)
         
-        return redirect(f"https://t.me/simpleewanv2bot?start=auth_success_{user.screen_name}")
+        return redirect(f"https://t.me/simpleewanv2bot?start=auth_success_{user.screen_name}_{profile_image_url}")
         
     except Exception as e:
         print(f"Error: {str(e)}")

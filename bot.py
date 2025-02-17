@@ -51,24 +51,38 @@ def setup_twitter_auth():
     return auth
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    # Vérifier si c'est un retour d'authentification Twitter
     message_text = update.message.text if update.message else None
     if not message_text:
         return ConversationHandler.END
 
-    print(f"Received message: {message_text}")  # Debug log
+    print(f"Received message: {message_text}")
 
     if message_text.startswith("/start auth_success_"):
-        username = message_text.replace("/start auth_success_", "")
+        # Extraire le nom d'utilisateur et l'URL de la photo
+        _, _, username, *profile_image_parts = message_text.split('_')
+        profile_image_url = '_'.join(profile_image_parts)
+        
         context.user_data['username'] = username
-        print(f"Authenticated user: {username}")  # Debug log
-        await update.message.reply_text(
-            f"Welcome {username}! 👋\n\n"
-            "I'm the BorgPad Curator Bot. I'll help you create a professional data room "
-            "for your project.\n\n"
-            "What is your project name? 🏷️"
-        )
-        return PROJECT_NAME
+        context.user_data['profile_image_url'] = profile_image_url
+        
+        print(f"Authenticated user: {username}")
+        print(f"Profile image URL: {profile_image_url}")
+        
+        # Télécharger et envoyer la photo de profil
+        try:
+            await update.message.reply_photo(
+                photo=profile_image_url,
+                caption=f"Welcome {username}! 👋\nYour Twitter account has been successfully connected."
+            )
+        except Exception as e:
+            print(f"Error sending profile image: {e}")
+            # Continuer même si l'envoi de la photo échoue
+            await update.message.reply_text(
+                f"Welcome {username}! 👋\nYour Twitter account has been successfully connected."
+            )
+        
+        # Continue with the rest of your conversation...
+        return USERNAME
 
     # Si ce n'est pas un retour d'auth, procéder avec l'authentification Twitter
     try:
