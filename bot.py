@@ -539,8 +539,9 @@ def parse_token_distribution(token_distribution: str) -> dict:
     return distribution
 
 async def summary(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    recap = (
-        "🎉 Here's a summary of your project submission:\n\n"
+    # Diviser le récapitulatif en plusieurs messages plus petits
+    part1 = (
+        "🎉 Here's a summary of your project submission (Part 1/3):\n\n"
         f"Project Name: {context.user_data['project_name']} 🏷️\n"
         f"Token Ticker: {context.user_data['token_ticker']} 💎\n"
         f"Elevator Pitch: {context.user_data['elevator_pitch']} 🚀\n"
@@ -548,6 +549,10 @@ async def summary(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         f"Solution: {context.user_data['solution']} 💡\n"
         f"Technology: {context.user_data['technology']} ⚙️\n"
         f"Target Market: {context.user_data['target_market']} 🎯\n"
+    )
+
+    part2 = (
+        "🎉 Project Summary (Part 2/3):\n\n"
         f"Growth Strategy: {context.user_data['growth_strategy']} 📈\n"
         f"Competitors: {context.user_data['competitors']} 🔍\n"
         f"Differentiators: {context.user_data['differentiators']} 💪✨\n"
@@ -555,6 +560,10 @@ async def summary(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         f"Initial Supply at TGE: {context.user_data['initial_supply']} 🔓\n"
         f"Target FDV: {context.user_data['target_fdv']} 💰\n"
         f"Token Distribution: {context.user_data['token_distribution']} 📊\n"
+    )
+
+    part3 = (
+        "🎉 Project Summary (Part 3/3):\n\n"
         f"Vesting Schedule: {context.user_data['vesting_schedule']} ⏳\n"
         f"Roadmap: {context.user_data['roadmap']} 🗺️\n"
         f"Team Info: {context.user_data['team_info']} 👥\n"
@@ -564,18 +573,18 @@ async def summary(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         "✨ Thank you for submitting your project to BorgPad! ✨"
     )
     
-    await update.message.reply_text(recap)
+    # Envoyer chaque partie séparément
+    await update.message.reply_text(part1)
+    await update.message.reply_text(part2)
+    await update.message.reply_text(part3)
 
-    # Create and send the pie chart
+    # Créer et envoyer les graphiques
     chart_path = create_pie_chart(context.user_data['token_distribution'])
     with open(chart_path, 'rb') as chart_file:
         await update.message.reply_photo(photo=chart_file)
 
-    # Parse the token distribution
     token_distribution = parse_token_distribution(context.user_data['token_distribution'])
     vesting_schedule_details = extract_vesting_schedule(context.user_data['vesting_schedule'])
-    print('vesting_schedule_details', vesting_schedule_details)
-    # Create and send the cumulative emission graph
     cumulative_graph_path = create_cumulative_emission_graph(vesting_schedule_details, token_distribution)
     with open(cumulative_graph_path, 'rb') as cumulative_graph_file:
         await update.message.reply_photo(photo=cumulative_graph_file)
