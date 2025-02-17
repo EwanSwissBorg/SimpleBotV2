@@ -12,6 +12,7 @@ from dotenv import load_dotenv
 import matplotlib.pyplot as plt
 import numpy as np
 import tweepy
+from database import init_db, save_project_data  # Ajoutez cet import
 
 load_dotenv()
 
@@ -215,14 +216,18 @@ async def handle_token_distribution(update: Update, context: ContextTypes.DEFAUL
                                       "• Initial unlock percentage (TGE unlock)\n"
                                       "• Vesting duration and details (in months)\n\n"
                                       "Example format:\n"
-                                      "Team (20%):\n"
+                                      "Team (50%):\n"
                                       "• 3 month cliff\n"
                                       "• 0% initial unlock\n"
                                       "• 12 months linear vesting\n\n"
-                                      "Community (69%):\n"
-                                      "• 0 month cliff\n"
+                                      "Advisors (20%):\n"
+                                      "• 2 month cliff\n"
                                       "• 10% initial unlock\n"
                                       "• 6 months linear vesting\n\n"
+                                      "Liquidity (30%):\n"
+                                      "• 0 month cliff\n"
+                                      "• 20% initial unlock\n"
+                                      "• 0 months linear vesting\n\n"
                                       "Please provide vesting details for your categories (copy - paste - complete):\n\n"
                                       f"Based on their previous answer ({context.user_data['token_distribution']}):")
     return VESTING_SCHEDULE
@@ -382,7 +387,16 @@ async def handle_dex_info(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
 async def handle_additional_info(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     context.user_data['additional_info'] = update.message.text
-    await summary(update, context)  # Appel de la fonction summary ici
+    
+    # Sauvegarder toutes les données dans la base de données
+    try:
+        save_project_data(context.user_data)
+        await update.message.reply_text("✅ Vos informations ont été sauvegardées avec succès!")
+    except Exception as e:
+        print(f"Erreur lors de la sauvegarde : {str(e)}")
+        await update.message.reply_text("❌ Une erreur est survenue lors de la sauvegarde des données.")
+    
+    await summary(update, context)
     return ConversationHandler.END
 
 
@@ -495,10 +509,6 @@ def create_cumulative_emission_graph(vesting_schedule_details: list, token_distr
     plt.xlim(0, max_total_months)
     plt.ylim(0, 100)
 
-    # Add "100%" text near the top
-    plt.text(max_total_months - 5, 95, '100%', 
-             horizontalalignment='right', verticalalignment='top')
-
     # Adjust layout to prevent label cutoff
     plt.tight_layout()
 
@@ -594,6 +604,9 @@ async def summary(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 
 
 def main():
+    # Initialiser la base de données
+    init_db()
+    
     app = ApplicationBuilder().token(os.getenv("TELEGRAM_BOT_TOKEN")).build()
 
     # Create conversation handler
