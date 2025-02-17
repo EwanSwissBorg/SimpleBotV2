@@ -433,86 +433,104 @@ def create_pie_chart(token_distribution: str) -> str:
     return chart_path
 
 def create_cumulative_emission_graph(vesting_schedule_details: list, token_distribution: dict) -> str:
-    # Determine the maximum total months from all categories
+    # Determine maximum months needed for the graph
     max_total_months = 0
-    for _, details in vesting_schedule_details:
+    for category_with_percentage, details in vesting_schedule_details:
         cliff_months = details[0]
         linear_vesting_months = details[2]
         total_months = cliff_months + linear_vesting_months
         max_total_months = max(max_total_months, total_months)
     
-    # Add 5 months to the maximum
-    max_total_months += 5
-
-    # Initialize emissions dictionary for each category
+    max_total_months += 5  # Add buffer for visualization
     emissions_by_category = {}
     
-    # Calculate emissions for each category
+    # Process each category
     for category_with_percentage, details in vesting_schedule_details:
-        # Extract category name and percentage
         category, percentage_str = category_with_percentage.split('(')
         category = category.strip()
-        percentage = float(percentage_str.strip(' %)'))  # Keep as percentage (not decimal)
-
-        # Get vesting details
+        percentage = float(percentage_str.strip(' %)'))
+        
         cliff_months = details[0]
-        initial_unlock = details[1]  # Keep as percentage
+        initial_unlock = details[1]
         linear_vesting_months = details[2]
-
-        # Create array for this category's emissions
+        
         emissions = np.zeros(max_total_months + 1)
         
-        # Calculate initial unlock at TGE
-        initial_amount = percentage * (initial_unlock / 100)
-        emissions[0] = initial_amount
+        # Initial unlock at TGE (month 0)
+        if initial_unlock > 0:
+            emissions[0] = percentage * (initial_unlock / 100)
         
-        # Calculate linear vesting after cliff
+        remaining_amount = percentage * (1 - initial_unlock / 100)
+        
         if linear_vesting_months > 0:
-            remaining_amount = percentage - initial_amount
             monthly_emission = remaining_amount / linear_vesting_months
             
-            for month in range(cliff_months + 1, min(cliff_months + linear_vesting_months + 1, max_total_months + 1)):
-                emissions[month] = monthly_emission
+            # Apply linear vesting after cliff period
+            for month in range(cliff_months + 1, cliff_months + linear_vesting_months + 1):
+                if month <= max_total_months:
+                    emissions[month] = monthly_emission
+        else:
+            # If no linear vesting, release remaining tokens after cliff
+            if cliff_months < max_total_months:
+                emissions[cliff_months] = remaining_amount
         
-        # Convert to cumulative sum
         emissions = np.cumsum(emissions)
-        
-        # Extend the final value for the remaining months
-        final_value = emissions[cliff_months + linear_vesting_months] if cliff_months + linear_vesting_months < max_total_months else emissions[-1]
-        emissions[cliff_months + linear_vesting_months:] = final_value
-        
-        emissions_by_category[category] = emissions
+        emissions_by_category[category] = {
+            'emissions': emissions,
+            'cliff_months': cliff_months,
+            'initial_unlock': initial_unlock,
+            'percentage': percentage,
+            'total_months': cliff_months + linear_vesting_months
+        }
 
-    # Create the stacked area plot
     plt.figure(figsize=(12, 8))
     
-    # Use a color palette similar to the example
-    colors = ['salmon', 'mediumpurple', 'lightgreen', 'pink', 'lightblue', 
-              'plum', 'rosybrown', 'mediumseagreen']
+    colors = {
+        'Team': 'salmon',
+        'Advisors': 'mediumpurple',
+        'Liquidity': 'lightgreen',
+        'Marketing': 'pink',
+        'Development': 'lightblue',
+        'Treasury': 'plum',
+        'Ecosystem': 'mediumseagreen',
+        'Private': 'orange',
+        'Public': 'yellow',
+        'Partners': 'cyan',
+        'Community': 'lightgray'
+    }
+    
+    x = np.arange(max_total_months + 1)
+    bottom = np.zeros(max_total_months + 1)
+    
+    # Sort by total vesting duration (ascending) and initial unlock (descending)
+    sorted_categories = sorted(
+        emissions_by_category.items(),
+        key=lambda x: (x[1]['total_months'], -x[1]['initial_unlock'])
+    )
     
     # Plot each category
-    categories = list(emissions_by_category.keys())
-    emissions_data = [emissions_by_category[cat] for cat in categories]
-    
-    # Create stacked area plot
-    plt.stackplot(range(max_total_months + 1), emissions_data, 
-                 labels=categories, colors=colors, alpha=0.6)
+    for category, data in sorted_categories:
+        plt.fill_between(x, bottom, bottom + data['emissions'],
+                        label=f"{category} ({data['percentage']}%)",
+                        color=colors.get(category, None),
+                        alpha=0.6)
+        bottom += data['emissions']
 
     # Customize the plot
-    plt.title('Cumulative Token Emission Schedule')
-    plt.xlabel('Months')
-    plt.ylabel('Cumulative Tokens in Circulation (%)')
-    plt.grid(True, alpha=0.3)
+    plt.title('Cumulative Token Emission Schedule', fontsize=14, pad=20)
+    plt.xlabel('Months', fontsize=12)
+    plt.ylabel('Cumulative Tokens in Circulation (%)', fontsize=12)
+    plt.grid(True, linestyle='--', alpha=0.7)
     plt.legend(title='Token Categories', bbox_to_anchor=(1.05, 1), loc='upper left')
     
     # Set axis limits
     plt.xlim(0, max_total_months)
     plt.ylim(0, 100)
-
-    # Adjust layout to prevent label cutoff
+    
+    # Adjust layout
     plt.tight_layout()
 
-    # Save the graph
+    # Save and return
     graph_path = 'cumulative_emission_graph.png'
     plt.savefig(graph_path, bbox_inches='tight', dpi=300)
     plt.close()
@@ -593,11 +611,11 @@ async def summary(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     with open(chart_path, 'rb') as chart_file:
         await update.message.reply_photo(photo=chart_file)
 
-    token_distribution = parse_token_distribution(context.user_data['token_distribution'])
-    vesting_schedule_details = extract_vesting_schedule(context.user_data['vesting_schedule'])
-    cumulative_graph_path = create_cumulative_emission_graph(vesting_schedule_details, token_distribution)
-    with open(cumulative_graph_path, 'rb') as cumulative_graph_file:
-        await update.message.reply_photo(photo=cumulative_graph_file)
+    # token_distribution = parse_token_distribution(context.user_data['token_distribution'])
+    # vesting_schedule_details = extract_vesting_schedule(context.user_data['vesting_schedule'])
+    # cumulative_graph_path = create_cumulative_emission_graph(vesting_schedule_details, token_distribution)
+    # with open(cumulative_graph_path, 'rb') as cumulative_graph_file:
+    #     await update.message.reply_photo(photo=cumulative_graph_file)
 
     return ConversationHandler.END
 
