@@ -1,4 +1,4 @@
-from telegram import Update
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     ApplicationBuilder, 
     CommandHandler, 
@@ -11,10 +11,16 @@ import os
 from dotenv import load_dotenv
 import matplotlib.pyplot as plt
 import numpy as np
+import tweepy
+import redis
+import json
 load_dotenv()
+
+redis_client = redis.Redis(host='localhost', port=6379, db=0)
 
 # Définition des états de la conversation
 (
+    USERNAME,
     PROJECT_NAME, 
     TOKEN_TICKER, 
     ELEVATOR_PITCH, 
@@ -35,15 +41,64 @@ load_dotenv()
     ESSENTIAL_LINKS,
     ADDITIONAL_INFO,
     DEX_INFO
-) = range(20)
+) = range(21)
+
+def setup_twitter_auth():
+    callback_url = os.getenv("CALLBACK_URL")
+    auth = tweepy.OAuthHandler(
+        os.getenv("TWITTER_API_KEY"),
+        os.getenv("TWITTER_API_SECRET"),
+        callback_url
+    )
+    return auth
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    await update.message.reply_text(
-        "Gm! 👋 I'm the BorgPad Curator Bot. I'll help you create a professional data room "
-        "for your project. Let's start with your basic Project Information.\n\n"
-        "What is your project name? 🏷️"
-    )
-    return PROJECT_NAME
+    # Vérifier si c'est un retour d'authentification Twitter
+    message_text = update.message.text if update.message else None
+    if not message_text:
+        return ConversationHandler.END
+
+    print(f"Received message: {message_text}")  # Debug log
+
+    if message_text.startswith("/start auth_success_"):
+        username = message_text.replace("/start auth_success_", "")
+        context.user_data['username'] = username
+        print(f"Authenticated user: {username}")  # Debug log
+        await update.message.reply_text(
+            f"Welcome {username}! 👋\n\n"
+            "I'm the BorgPad Curator Bot. I'll help you create a professional data room "
+            "for your project.\n\n"
+            "What is your project name? 🏷️"
+        )
+        return PROJECT_NAME
+
+    # Si ce n'est pas un retour d'auth, procéder avec l'authentification Twitter
+    auth = setup_twitter_auth()
+    try:
+        redirect_url = auth.get_authorization_url()
+        request_token = auth.request_token
+        
+        print(f"Generated Twitter auth URL: {redirect_url}")  # Debug log
+        
+        # Stocker le request_token dans Redis
+        redis_client.setex(
+            request_token['oauth_token'],
+            3600,
+            json.dumps(request_token)
+        )
+        
+        keyboard = [[InlineKeyboardButton("Connect with Twitter", url=redirect_url)]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await update.message.reply_text(
+            "Gm! 👋 I'm the BorgPad Curator Bot.\n\n"
+            "Please connect your Twitter account to continue:",
+            reply_markup=reply_markup
+        )
+        return USERNAME
+    except Exception as e:
+        print(f"Error in start: {str(e)}")  # Debug log
+        await update.message.reply_text(f'Error during Twitter authentication: {str(e)}')
+        return ConversationHandler.END
 
 async def handle_project_name(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     context.user_data['project_name'] = update.message.text
@@ -546,8 +601,14 @@ def main():
 
     # Create conversation handler
     conv_handler = ConversationHandler(
-        entry_points=[CommandHandler('start', start)],
+        entry_points=[
+            CommandHandler('start', start),  # Handle both normal start and deep linking
+        ],
         states={
+            USERNAME: [
+                CommandHandler('start', start),  # Handle deep linking in USERNAME state
+                MessageHandler(filters.TEXT & ~filters.COMMAND, start)
+            ],
             PROJECT_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_project_name)],
             TOKEN_TICKER: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_token_ticker)],
             ELEVATOR_PITCH: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_elevator_pitch)],
@@ -570,6 +631,7 @@ def main():
             DEX_INFO: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_dex_info)],
         },
         fallbacks=[],
+        allow_reentry=True  # Allow the conversation to be restarted
     )
 
     app.add_handler(conv_handler)
