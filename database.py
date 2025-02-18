@@ -5,31 +5,24 @@ def init_db():
     conn = sqlite3.connect('projects.db')
     c = conn.cursor()
     
-    # Création de la table projects
+    # Création de la table projects avec uniquement les colonnes nécessaires
     c.execute('''
         CREATE TABLE IF NOT EXISTS projects (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             twitter_username TEXT NOT NULL,
             project_name TEXT NOT NULL,
+            project_description TEXT,
+            project_picture TEXT,
+            website_link TEXT,
+            community_link TEXT,
+            x_link TEXT,
+            deploy_chain TEXT,
+            sector TEXT,
+            tge_date TEXT,
+            fdv TEXT,
             token_ticker TEXT NOT NULL,
-            elevator_pitch TEXT,
-            problem_solving TEXT,
-            solution TEXT,
-            technology TEXT,
-            target_market TEXT,
-            growth_strategy TEXT,
-            competitors TEXT,
-            differentiators TEXT,
-            token_metrics TEXT,
-            initial_supply TEXT,
-            target_fdv TEXT,
-            token_distribution TEXT,
-            vesting_schedule TEXT,
-            roadmap TEXT,
-            team_info TEXT,
-            essential_links TEXT,
-            additional_info TEXT,
-            dex_info TEXT,
+            token_picture TEXT,
+            data_room TEXT,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     ''')
@@ -43,34 +36,27 @@ def save_project_data(data):
     
     c.execute('''
         INSERT INTO projects (
-            twitter_username, project_name, token_ticker, elevator_pitch,
-            problem_solving, solution, technology, target_market,
-            growth_strategy, competitors, differentiators, token_metrics,
-            initial_supply, target_fdv, token_distribution, vesting_schedule,
-            roadmap, team_info, essential_links, additional_info, dex_info
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            twitter_username, project_name, project_description,
+            project_picture, website_link, community_link,
+            x_link, deploy_chain, sector,
+            tge_date, fdv, token_ticker,
+            token_picture, data_room
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ''', (
         data.get('username'),
         data.get('project_name'),
+        data.get('project_description'),
+        data.get('project_picture'),
+        data.get('website_link'),
+        data.get('community_link'),
+        data.get('x_link'),
+        data.get('deploy_chain'),
+        data.get('sector'),
+        data.get('tge_date'),
+        data.get('fdv'),
         data.get('token_ticker'),
-        data.get('elevator_pitch'),
-        data.get('problem_solving'),
-        data.get('solution'),
-        data.get('technology'),
-        data.get('target_market'),
-        data.get('growth_strategy'),
-        data.get('competitors'),
-        data.get('differentiators'),
-        data.get('token_metrics'),
-        data.get('initial_supply'),
-        data.get('target_fdv'),
-        data.get('token_distribution'),
-        data.get('vesting_schedule'),
-        data.get('roadmap'),
-        data.get('team_info'),
-        data.get('essential_links'),
-        data.get('additional_info'),
-        data.get('dex_info')
+        data.get('token_picture'),
+        data.get('data_room')
     ))
     
     conn.commit()
@@ -87,11 +73,9 @@ def get_project(twitter_username):
     
     if project:
         # Convertir le tuple en dictionnaire
-        columns = ['id', 'twitter_username', 'project_name', 'token_ticker', 'elevator_pitch',
-                  'problem_solving', 'solution', 'technology', 'target_market',
-                  'growth_strategy', 'competitors', 'differentiators', 'token_metrics',
-                  'initial_supply', 'target_fdv', 'token_distribution', 'vesting_schedule',
-                  'roadmap', 'team_info', 'essential_links', 'additional_info', 'dex_info',
-                  'created_at']
+        columns = ['id', 'twitter_username', 'project_name', 'project_description',
+                  'project_picture', 'website_link', 'community_link', 'x_link',
+                  'deploy_chain', 'sector', 'tge_date', 'fdv', 'token_ticker',
+                  'token_picture', 'data_room', 'created_at']
         return dict(zip(columns, project))
     return None 
