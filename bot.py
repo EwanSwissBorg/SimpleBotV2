@@ -5,7 +5,8 @@ from telegram.ext import (
     ContextTypes,
     ConversationHandler,
     MessageHandler,
-    filters
+    filters,
+    CallbackQueryHandler
 )
 import os
 from dotenv import load_dotenv
@@ -15,6 +16,7 @@ import tweepy
 from database import init_db, save_project_data  # Ajoutez cet import
 import re
 from datetime import datetime
+from PIL import Image
 load_dotenv()
 
 # Définition des états de la conversation
@@ -55,12 +57,12 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     if message_text.startswith("/start auth_success_"):
         username = message_text.replace("/start auth_success_", "")
         context.user_data['username'] = username
-        print(f"Authenticated user: {username}")  # Debug log
-        await update.message.reply_text(
-            f"Welcome {username}! 👋\n\n"
-            "I'm the BorgPad Curator Bot. I'll help you create a professional data room "
-            "for your project.\n\n"
-            "What is your project name? 🏷️"
+        
+        # Display the website example image
+        with open('website_example.png', 'rb') as image:
+            await update.message.reply_photo(photo=image, caption=f"Welcome {username}! 👋\n\n"
+            "I'm the BorgPad Curator Bot. I'll help you to create your commitment page on BorgPad as the image above.\n\n"
+            "1/13 - What is your project name? 🏷️"
         )
         return PROJECT_NAME
 
@@ -85,21 +87,29 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 
 async def handle_project_name(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     context.user_data['project_name'] = update.message.text
-    await update.message.reply_text("One sentence to describe your project 💎")
+    await update.message.reply_text("2/13 - One sentence to describe your project 💎")
     return PROJECT_DESCRIPTION
 
 async def handle_project_description(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     context.user_data['project_description'] = update.message.text
-    await update.message.reply_text("Send your project picture in jpg or png format 🖼️")
+    await update.message.reply_text("3/13 - Send your project picture in jpg or png format 🖼️ (WITH COMPRESSION - so please ensure a high quality image first)")
     return PROJECT_PICTURE
 
 async def handle_project_picture(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+
+    print("update.message", update.message)
+    # Vérifier si le message est un texte
+    if update.message.text:
+        await update.message.reply_text("Please send a picture in jpg or png format with compression 🖼️")
+        return PROJECT_PICTURE
+
     # Vérifier si un fichier photo a été envoyé
     if not update.message.photo:
-        await update.message.reply_text("Please send a picture in jpg or png format 🖼️")
+        await update.message.reply_text("Please send a picture in jpg or png format with compression 🖼️")
         return PROJECT_PICTURE
     
     try:
+        print("Received photo")
         # Obtenir le fichier photo avec la meilleure qualité
         photo = update.message.photo[-1]
         photo_file = await photo.get_file()
@@ -114,10 +124,15 @@ async def handle_project_picture(update: Update, context: ContextTypes.DEFAULT_T
         # Télécharger la photo
         await photo_file.download_to_drive(file_name)
         
+        # Vérifier si le fichier est un JPG ou PNG
+        if not is_valid_image(file_name):
+            await update.message.reply_text("The file is not a valid image format. Please send a JPG or PNG file.")
+            return PROJECT_PICTURE
+        
         # Sauvegarder le chemin de l'image dans les données utilisateur
         context.user_data['project_picture'] = file_name
         
-        await update.message.reply_text("Your website Link 🌐")
+        await update.message.reply_text("4/13 - Your website Link 🌐")
         return WEBSITE_LINK
         
     except Exception as e:
@@ -127,49 +142,83 @@ async def handle_project_picture(update: Update, context: ContextTypes.DEFAULT_T
 
 async def handle_website_link(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     context.user_data['website_link'] = update.message.text
-    await update.message.reply_text("Your telegram / discord link (your main channel to communicate your community) 💬")
+    await update.message.reply_text("5/13 - Your telegram OR discord link (your main channel to communicate your community) 💬")
     return COMMUNITY_LINK
 
 async def handle_community_link(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     context.user_data['community_link'] = update.message.text
-    await update.message.reply_text("Your X link 🐦")
+    await update.message.reply_text("6/13 - Your X link 🐦")
     return X_LINK
 
 async def handle_x_link(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     context.user_data['x_link'] = update.message.text
-    await update.message.reply_text("On which chain you want to deploy? ⛓️")
+    await update.message.reply_text("7/13 - On which chain you want to deploy? ⛓️")
     return DEPLOY_CHAIN
 
 async def handle_deploy_chain(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     context.user_data['deploy_chain'] = update.message.text
-    await update.message.reply_text("What is your sector? 🎯")
+    await update.message.reply_text("8/13 - What is your sector? 🎯 (Depin / SocialFi / DeFi etc.)")
     return SECTOR
 
 async def handle_sector(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     context.user_data['sector'] = update.message.text
-    await update.message.reply_text("On which date you want to TGE? (DD/MM/YYYY) 📅")
+    
+    # Créer les boutons pour la TGE date
+    keyboard = [
+        [InlineKeyboardButton("1 to 2 weeks", callback_data="tge_1-2weeks")],
+        [InlineKeyboardButton("1 month to 2 months", callback_data="tge_1-2months")],
+        [InlineKeyboardButton("more than 2 months", callback_data="tge_2months+")]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    await update.message.reply_text(
+        "9/13 - When do you plan to do your TGE? 📅",
+        reply_markup=reply_markup
+    )
     return TGE_DATE
 
 async def handle_tge_date(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    date_text = update.message.text
-    try:
-        datetime.strptime(date_text, '%d/%m/%Y')
-        context.user_data['tge_date'] = date_text
-        await update.message.reply_text("At which FDV? 💰")
-        return FDV
-    except ValueError:
-        await update.message.reply_text("Please enter the date in DD/MM/YYYY format 📅")
-        return TGE_DATE
+    query = update.callback_query
+    await query.answer()
+    
+    # Extraire la valeur de TGE date du callback_data
+    tge_value = query.data.replace("tge_", "")
+    context.user_data['tge_date'] = tge_value
+
+    # Informer l'utilisateur de la TGE choisie
+    await query.message.reply_text(f"TGE selected: {tge_value} 📅")
+    
+    # Créer les boutons pour la FDV
+    keyboard = [
+        [InlineKeyboardButton("1M to 5M", callback_data="fdv_1-5M")],
+        [InlineKeyboardButton("5M to 10M", callback_data="fdv_5-10M")],
+        [InlineKeyboardButton("10M to 25M", callback_data="fdv_10-25M")],
+        [InlineKeyboardButton("25M to 50M", callback_data="fdv_25-50M")]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    await query.message.reply_text(
+        text="10/13 - What is your target FDV? 💰",
+        reply_markup=reply_markup
+    )
+    return FDV
 
 async def handle_fdv(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    fdv = update.message.text
+    query = update.callback_query
+    await query.answer()
     
-    if not is_valid_fdv(fdv):
-        await update.message.reply_text("Please enter a valid FDV (must be a positive integer). 💔")
-        return FDV  # Stay in the same state to ask for the FDV again
+    # Extraire la valeur de FDV du callback_data
+    fdv_value = query.data.replace("fdv_", "")
+    context.user_data['fdv'] = fdv_value
     
-    context.user_data['fdv'] = fdv
-    await update.message.reply_text("Your token TICKER $XXXXX 🎫")
+    await query.edit_message_text(
+        text=f"FDV selected: {fdv_value} 💰"
+    )
+    
+    await query.message.reply_text(
+        "11/13 - Your token TICKER $XXXXX 🎫 (must start with '$' and be up to 5 characters long in uppercase)"
+    )
+    
     return TOKEN_TICKER
 
 def is_valid_fdv(fdv: str) -> bool:
@@ -179,19 +228,25 @@ async def handle_token_ticker(update: Update, context: ContextTypes.DEFAULT_TYPE
     ticker = update.message.text
     
     if not is_valid_ticker(ticker):
-        await update.message.reply_text("Please enter a valid token ticker (must start with '$' and be up to 5 characters long in uppercase). 💔")
+        await update.message.reply_text("11/13 - Please enter a valid token ticker (must start with '$' and be up to 5 characters long in uppercase). 💔")
         return TOKEN_TICKER
     
     context.user_data['token_ticker'] = ticker
-    await update.message.reply_text("Send your token picture in jpg or png format 🖼️")
+    await update.message.reply_text("12/13 - Send your token picture in jpg or png format 🖼️ (WITH COMPRESSION - so please ensure a high quality image first)")
     return TOKEN_PICTURE
 
 def is_valid_ticker(ticker: str) -> bool:
     return ticker.startswith('$') and len(ticker) <= 6 and len(ticker) >= 2 and ticker[1:].isupper()
 
 async def handle_token_picture(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    # Vérifier si le message est un texte
+    if update.message.text:
+        await update.message.reply_text("Please send a picture in jpg or png format with compression 🖼️")
+        return TOKEN_PICTURE
+
+    # Vérifier si un fichier photo a été envoyé
     if not update.message.photo:
-        await update.message.reply_text("Please send a picture in jpg or png format 🖼️")
+        await update.message.reply_text("Please send a picture in jpg or png format with compression 🖼️")
         return TOKEN_PICTURE
     
     try:
@@ -203,10 +258,16 @@ async def handle_token_picture(update: Update, context: ContextTypes.DEFAULT_TYP
         
         file_name = f"token_pictures/{context.user_data['username']}_{photo.file_unique_id}.jpg"
         await photo_file.download_to_drive(file_name)
+        
+        # Vérifier si le fichier est un JPG ou PNG
+        if not is_valid_image(file_name):
+            await update.message.reply_text("The file is not a valid image format. Please send a JPG or PNG file.")
+            return TOKEN_PICTURE
+        
         context.user_data['token_picture'] = file_name
         
         await update.message.reply_text(
-            "To provide the most information to your investors - and make them want to invest - you need a data room 📚\n\n"
+            "13/13 - To provide the most information to your investors - and make them want to invest - you need a data room 📚\n\n"
             "Examples:\n"
             "Ambient: https://borgpad-data-room.notion.site/moemate?pvs=4\n"
             "Solana ID: https://www.solana.id/solid\n\n"
@@ -219,6 +280,13 @@ async def handle_token_picture(update: Update, context: ContextTypes.DEFAULT_TYP
         print(f"Error handling token picture: {str(e)}")
         await update.message.reply_text("❌ An error occurred while processing your picture. Please try again.")
         return TOKEN_PICTURE
+
+def is_valid_image(file_path):
+    try:
+        with Image.open(file_path) as img:
+            return img.format in ['JPEG', 'PNG']
+    except Exception:
+        return False
 
 async def handle_data_room(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     context.user_data['data_room'] = update.message.text
@@ -268,31 +336,35 @@ def main():
         entry_points=[CommandHandler("start", start)],
         states={
             USERNAME: [
-                CommandHandler('start', start),  # Handle deep linking in USERNAME state
+                CommandHandler('start', start),
                 MessageHandler(filters.TEXT & ~filters.COMMAND, start)
             ],
             PROJECT_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_project_name)],
             PROJECT_DESCRIPTION: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_project_description)],
-            PROJECT_PICTURE: [MessageHandler(filters.PHOTO, handle_project_picture)],
+            PROJECT_PICTURE: [
+                MessageHandler(filters.PHOTO, handle_project_picture),
+                MessageHandler(filters.TEXT & ~filters.COMMAND, handle_project_picture)
+            ],
             WEBSITE_LINK: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_website_link)],
             COMMUNITY_LINK: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_community_link)],
             X_LINK: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_x_link)],
             DEPLOY_CHAIN: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_deploy_chain)],
             SECTOR: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_sector)],
-            TGE_DATE: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_tge_date)],
-            FDV: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_fdv)],
+            TGE_DATE: [CallbackQueryHandler(handle_tge_date, pattern=r"^tge_")],
+            FDV: [CallbackQueryHandler(handle_fdv, pattern=r"^fdv_")],
             TOKEN_TICKER: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_token_ticker)],
-            TOKEN_PICTURE: [MessageHandler(filters.PHOTO, handle_token_picture)],
+            TOKEN_PICTURE: [
+                MessageHandler(filters.PHOTO, handle_token_picture),
+                MessageHandler(filters.TEXT & ~filters.COMMAND, handle_token_picture)
+            ],
             DATA_ROOM: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_data_room)],
         },
         fallbacks=[],
-        allow_reentry=True  # Allow the conversation to be restarted
+        allow_reentry=True
     )
 
     app.add_handler(conv_handler)
-
     print("Bot is running...")
-    # Start the bot
     app.run_polling()
 
 if __name__ == '__main__':
